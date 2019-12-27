@@ -4,6 +4,9 @@ const admin = require('firebase-admin');
 // Initialize app
 admin.initializeApp();
 
+const gameplay = require('./functions/gameplay');
+gameplay(exports);
+
 // Create a document whenever a user authenticates
 exports.createUserDocumentUponAuthentication = functions.auth.user().onCreate(user => {
     // Profile
@@ -96,6 +99,16 @@ exports.replacePlaceholderEmailsUponAuthentication = functions.auth.user().onCre
 exports.createCourseUponTeacherRequest = functions.https.onCall((data, context) => {
     const REQUIRED_PERMISSIONS = 2;
 
+    const defaultCourseData = {
+        archived: false,
+        assignedReagentGroups: [],
+        settings: {
+            beginnerGroup: true,
+            numRegularGroups: 4,
+            numChallengeGroups: 3
+        }
+    };
+
     // Grab user UID
     const userID = context.auth.uid;
 
@@ -114,70 +127,69 @@ exports.createCourseUponTeacherRequest = functions.https.onCall((data, context) 
         if (!user.exists || user.data().access < REQUIRED_PERMISSIONS) {
             reject('Insufficient permissions');
         } else {
-            // Instantiate reagent group list for this course
-            const defaultReagentListDocument = await firestore.doc('/reagentGroups/default').get();
-            if (!defaultReagentListDocument.exists) {
-                reject('Encountered a problem accessing the default reagent list.');
-                return;
-            }
-
-            // Create the actual reagent list document
-            const newReagentListDoc = await firestore.collection('reagentGroups').add(defaultReagentListDocument.data());
-            const reagentListID = newReagentListDoc.id;
-
             // Create course document
             firestore.collection('courses').add({
                 name: courseName,
                 teachers: [ userID ],
-                archived: false,
-                assignedReagentGroups: [],
-                reagentGroup: reagentListID
+                ...defaultCourseData
             }).then(resolve).catch(reject);
         }
     });
 });
 
-// exports.checkAnswers = functions.https.onCall((data, context) => {
-//     // Grab user UID
-//     const authUID = context.auth.uid;
-//
-//     // Return a promise so Firebase will respond to the client with the resolve object
-//     return new Promise(async (resolve, reject) => {
-//         // Firestore object
-//         const firestore = admin.firestore();
-//
-//         // Grab user by their UID
-//         const user = await firestore.doc(`/users/${authUID}`).get();
-//         if (!user.exists) {
-//             reject('User document does not exist!');
-//             return;
-//         }
-//
-//         // Extract group information
-//         const groupUID = user.data().group;
-//         if (!groupUID) {
-//             reject('User is not in a group.');
-//             return;
-//         }
-//
-//         // Grab Group by its UID
-//         const group = await firestore.doc(`/groups/${groupUID}`).get();
-//         if (!group.exists) {
-//             reject('User group does not exist.');
-//             return;
-//         }
-//
-//         // Grab group progression by its UID
-//         const progressionUID = group.data().progression;
-//         const progression = await firestore.doc(`/groupProgressions/${progressionUID}`);
-//
-//
-//     });
-// });
-//
-// exports.nextReagentGroup = functions.https.onCall((data, context) => {
-//     // Grab UID
-//     const authUID = context.auth.uid;
-//
-//
-// });
+// Create a reagent list for the course upon creation
+exports.createReagentGroupUponCourseCreation = functions.firestore.document('courses/{courseId}').onCreate(async (snapshot, context) => {
+    const firestore = admin.firestore();
+
+    // Grab data
+    const courseId = context.params.courseId;
+    const snapshotData = snapshot.data();
+
+    // Instantiate reagent group list for this course
+    const defaultReagentListDocument = await firestore.doc('/reagentGroups/default').get();
+    if (!defaultReagentListDocument.exists) {
+        return Promise.reject('Encountered a problem accessing the default reagent list.');
+    }
+
+    // Create the actual reagent list document
+    const newReagentListDoc = await firestore.collection('reagentGroups').add(defaultReagentListDocument.data());
+    const reagentListID = newReagentListDoc.id;
+
+    // Define defaults for new document
+    const data = {
+        reagentGroup: reagentListID
+    };
+
+    firestore.doc(`/courses/${ courseId }`).update(data);
+});
+
+// Creates a progression document for a group whenever it's created
+exports.createProgressionDocumentUponGroupCreation = functions.firestore.document('groups/{groupId}').onCreate(async (snapshot, context) => {
+    // Grab data
+    const groupId = context.params.groupId;
+    const snapshotData = snapshot.data();
+
+    // Define defaults for new document
+    const data = {
+        course: snapshotData.course,
+        completed: {
+            beginner: false,
+            regular: [],
+            challenge: []
+        },
+        current: null,
+        finished: false,
+        frozen: false,
+        group: groupId
+    };
+
+    // Set defaults
+    const firestore = admin.firestore();
+
+    const progressionId = (await firestore.collection('groupProgressions').add(data)).id;
+
+    // Add progression to group
+    firestore.doc(`groups/${ groupId }`).update({
+        progression: progressionId
+    });
+});
