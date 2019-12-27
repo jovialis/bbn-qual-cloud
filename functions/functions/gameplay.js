@@ -12,21 +12,114 @@ module.exports = function(e) {
 	e.checkAnswers = functions.https.onCall((data, context) => {
 		// Grab user UID
 		const authUID = context.auth.uid;
+		if (!authUID) {
+			return Promise.reject("User not authenticated");
+		}
 
 		// Return a promise so Firebase will respond to the client with the resolve object
 		return new Promise(async (resolve, reject) => {
-			// Grab progression
-			const progression = await search.getProgressionByUserId(authUID);
+			try {
 
-			// Correct answer
-			const answer = progression.data().current.answers;
+				// Grab progression
+				const progression = await search.getProgressionByUserId(authUID);
+				const progressionRef = firestore.doc(`/groupProgressions/${ progression.id }`);
+				const progressionData = progression.data();
 
-			if (data.answer == answer) {
-				// SUCCESS
-				console.log('Success');
-			} else {
-				//ERROR
-				console.log('Failure');
+				// Reject if no current
+				if (!progressionData.current) {
+					reject("No reagent group assigned! Call getReagentGroup before checking answers.");
+					return;
+				}
+
+
+				// TODO: Make sure you can't check answers or get reagent groups unless the class is live
+
+				// todo: CHECK IF GROUP IS FROZEN
+
+				// TODO: Write method to automatically freeze an account if the attempts increase too much
+
+				// Correct answer
+				const userAnswer = data.answers;
+				const correctAnswer = progressionData.current.answers;
+
+				if (JSON.stringify(userAnswer) === JSON.stringify(correctAnswer)) {
+					// SUCCESS
+					const groupNum = progressionData.current.group;
+					const prefix = progressionData.current.prefix;
+					const difficulty = progressionData.current.difficulty;
+
+					// Get course
+					const course = await search.getCourseFromUserId(authUID);
+					const courseRef = firestore.doc(`/courses/${ course.id }`);
+					const courseData = course.data();
+
+					// Grab course settings
+					const numNormalRequired = courseData.settings.numRegularGroups;
+					const numChallengeRequired = courseData.settings.numChallengeGroups;
+
+					// Num completed by user
+					const numNormalCompleted = progressionData.completed.regular.length;
+					const numChallengeCompleted = progressionData.completed.challenge.length;
+
+					// Erase current
+					progressionData.current = null;
+
+					// Mark set as completed by user
+					if (difficulty === 0) {
+						// Beginner completed
+						progressionData.completed.beginner = true;
+					} else if (difficulty === 1) {
+						// Normal completed
+						progressionData.completed.regular.push(groupNum);
+					} else if (difficulty === 2) {
+						// Challenge completed
+						progressionData.completed.challenge.push(groupNum);
+					}
+
+					// Update progression
+					await progressionRef.update(progressionData);
+
+					// Remove user reagent group from assigned
+					let assignedReagentGroups = courseData.assignedReagentGroups;
+					assignedReagentGroups.splice(assignedReagentGroups.indexOf(prefix), 1);
+					await courseRef.update({ assignedReagentGroups: assignedReagentGroups });
+
+					// Check if user group is done
+					if (numNormalCompleted >= numNormalRequired && numChallengeCompleted >= numChallengeRequired) {
+						await progressionRef.update({
+							finished: true
+						});
+
+						// Mark as finished to user
+						resolve({
+							result: 'finished'
+						});
+
+						return;
+					}
+
+					// Mark set as completed to user.
+					resolve({
+						result: 'correct'
+					});
+
+				} else {
+					// Incorrect
+					// Increment attempts
+					await progressionRef.update({
+						current: {
+							...progressionData.current,
+							attempts: progressionData.attempts + 1
+						}
+					});
+
+					resolve({
+						result: 'incorrect'
+					});
+				}
+
+			} catch (e) {
+				reject(e);
 			}
 		});
 	});
@@ -69,7 +162,21 @@ module.exports = function(e) {
 					}
 
 					resolve({
-						status: "finished"
+						status: "finished",
+						progress: {
+							beginner: {
+								completed: beginnerCompleted ? 1 : 0,
+								required: assignBeginnerGroup ? 1 : 0
+							},
+							regular: {
+								completed: numNormalCompleted,
+								required: numNormalRequired
+							},
+							challenge: {
+								completed: numChallengeCompleted,
+								required: numChallengeRequired
+							}
+						}
 					});
 					return;
 				}
@@ -80,6 +187,7 @@ module.exports = function(e) {
 						status: "active",
 						prefix: progressionData.current.prefix,
 						reagents: progressionData.current.reagents,
+						difficulty: progressionData.current.difficulty,
 						progress: {
 							beginner: {
 								completed: beginnerCompleted ? 1 : 0,
@@ -102,6 +210,7 @@ module.exports = function(e) {
 				let selectedGroupNumber;
 				let selectedVariationNumber;
 				let selectedPrefix;
+				let selectedDifficulty;
 
 				// Grab the reagent group document for the class
 				const reagentGroupsData = (await firestore.doc(`/reagentGroups/${courseData.reagentGroup}`).get()).data();
@@ -112,7 +221,8 @@ module.exports = function(e) {
 					selectedGroup = reagentGroupsData.beginnerGroup;
 					selectedGroupNumber = 0;
 					selectedVariationNumber = Math.floor(Math.random() * selectedGroup.length);
-					selectedPrefix = `${ selectedVariationNumber }00`
+					selectedPrefix = `${ selectedVariationNumber }00`;
+					selectedDifficulty = 0;
 				} else {
 					// Relevant course reagent pool
 					let reagentGroupsPool;
@@ -124,10 +234,12 @@ module.exports = function(e) {
 						// Assign regular
 						reagentGroupsPool = reagentGroupsData.regularGroups;
 						completedReagentGroupsPool = progressionData.completed.regular;
+						selectedDifficulty = 1;
 					} else {
 						// Assign challenge
 						reagentGroupsPool = reagentGroupsData.challengeGroups;
 						completedReagentGroupsPool = progressionData.completed.challenge;
+						selectedDifficulty = 2;
 					}
 
 					// Don't assign groups that other people are currently using
@@ -174,7 +286,9 @@ module.exports = function(e) {
 						reagents: shuffledReagents,
 						answers: correctAnswerList,
 						prefix: selectedPrefix,
-						attempts: 0
+						attempts: 0,
+						group: `${ selectedGroupNumber }`,
+						difficulty: selectedDifficulty
 					},
 					frozen: false
 				};
@@ -199,6 +313,7 @@ module.exports = function(e) {
 					status: "active",
 					prefix: selectedPrefix,
 					reagents: shuffledReagents,
+					difficulty: selectedDifficulty,
 					progress: {
 						beginner: {
 							completed: beginnerCompleted ? 1 : 0,
