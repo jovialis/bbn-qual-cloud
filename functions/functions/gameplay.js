@@ -20,6 +20,8 @@ module.exports = function(e) {
 		return new Promise(async (resolve, reject) => {
 			try {
 
+				// TODO: Make sure you can't check answers or get reagent groups unless the class is live
+
 				// Grab progression
 				const progression = await search.getProgressionByUserId(authUID);
 				const progressionRef = firestore.doc(`/groupProgressions/${ progression.id }`);
@@ -31,16 +33,25 @@ module.exports = function(e) {
 					return;
 				}
 
+				// Reject if frozen
+				if (progressionData.current.frozen) {
+					resolve({
+						result: 'frozen',
+						iceberg: progressionData.current.iceberg
+					});
+					return;
+				}
 
-				// TODO: Make sure you can't check answers or get reagent groups unless the class is live
+				// Increment total attempts
+				const totalAttempts = progressionData.totalAttempts + 1;
 
-				// todo: CHECK IF GROUP IS FROZEN
-
-				// TODO: Write method to automatically freeze an account if the attempts increase too much
+				// Attempts at this particular group
+				let curNumAttempts = progressionData.current.groupAttempts + 1;
 
 				// Correct answer
 				const userAnswer = data.answers;
 				const correctAnswer = progressionData.current.answers;
+				const attemptsRemaining = progressionData.current.attempts;
 
 				if (JSON.stringify(userAnswer) === JSON.stringify(correctAnswer)) {
 					// SUCCESS
@@ -58,8 +69,8 @@ module.exports = function(e) {
 					const numChallengeRequired = courseData.settings.numChallengeGroups;
 
 					// Num completed by user
-					const numNormalCompleted = progressionData.completed.regular.length;
-					const numChallengeCompleted = progressionData.completed.challenge.length;
+					let numNormalCompleted = progressionData.completed.regular.length;
+					let numChallengeCompleted = progressionData.completed.challenge.length;
 
 					// Erase current
 					progressionData.current = null;
@@ -71,10 +82,15 @@ module.exports = function(e) {
 					} else if (difficulty === 1) {
 						// Normal completed
 						progressionData.completed.regular.push(groupNum);
+						numNormalCompleted += 1;
 					} else if (difficulty === 2) {
 						// Challenge completed
 						progressionData.completed.challenge.push(groupNum);
+						numChallengeCompleted += 1;
 					}
+
+					// Increment total attempts
+					progressionData.totalAttempts = totalAttempts;
 
 					// Update progression
 					await progressionRef.update(progressionData);
@@ -92,6 +108,7 @@ module.exports = function(e) {
 
 						// Mark as finished to user
 						resolve({
+							totalAttempts: progressionData.totalAttempts, // Return global total attempts
 							result: 'finished'
 						});
 
@@ -100,22 +117,50 @@ module.exports = function(e) {
 
 					// Mark set as completed to user.
 					resolve({
+						groupAttempts: curNumAttempts,
 						result: 'correct'
 					});
 
 				} else {
 					// Incorrect
-					// Increment attempts
-					await progressionRef.update({
-						current: {
-							...progressionData.current,
-							attempts: progressionData.attempts + 1
-						}
-					});
+					// Decrement available attempts
+					const updatedAttempts = attemptsRemaining - 1;
 
-					resolve({
-						result: 'incorrect'
-					});
+					// If no more attempts remaining, freeze group
+					if (updatedAttempts <= 0) {
+						const iceberg = await generateIceberg(progressionData.group, progression.id, progressionData.course, progressionData.current.group);
+						const icebergId = iceberg.id;
+
+						await progressionRef.update({
+							current: {
+								...progressionData.current,
+								attempts: updatedAttempts,
+								frozen: true,
+								iceberg: icebergId,
+								groupAttempts: curNumAttempts
+							},
+							totalAttempts: totalAttempts
+						});
+
+						resolve({
+							result: 'frozen',
+							iceberg: icebergId
+						});
+					} else {
+						await progressionRef.update({
+							current: {
+								...progressionData.current,
+								attempts: updatedAttempts,
+								groupAttempts: curNumAttempts
+							},
+							totalAttempts: totalAttempts
+						});
+
+						resolve({
+							attempts: updatedAttempts,
+							result: 'incorrect'
+						});
+					}
 				}
 
 			} catch (e) {
@@ -147,6 +192,7 @@ module.exports = function(e) {
 				const assignBeginnerGroup = courseData.settings.beginnerGroup;
 				const numNormalRequired = courseData.settings.numRegularGroups;
 				const numChallengeRequired = courseData.settings.numChallengeGroups;
+				const numAttempts = courseData.settings.attempts;
 
 				// Num completed by user
 				const beginnerCompleted = progressionData.completed.beginner;
@@ -163,6 +209,7 @@ module.exports = function(e) {
 
 					resolve({
 						status: "finished",
+						totalAttempts: progressionData.totalAttempts,
 						progress: {
 							beginner: {
 								completed: beginnerCompleted ? 1 : 0,
@@ -183,26 +230,50 @@ module.exports = function(e) {
 
 				// A reagent group has already been assigned
 				if (progressionData.current) {
-					resolve({
-						status: "active",
-						prefix: progressionData.current.prefix,
-						reagents: progressionData.current.reagents,
-						difficulty: progressionData.current.difficulty,
-						progress: {
-							beginner: {
-								completed: beginnerCompleted ? 1 : 0,
-								required: assignBeginnerGroup ? 1 : 0
-							},
-							regular: {
-								completed: numNormalCompleted,
-								required: numNormalRequired
-							},
-							challenge: {
-								completed: numChallengeCompleted,
-								required: numChallengeRequired
+					// Throw frozen status to the user if they're frozen
+					if (progressionData.current.frozen) {
+						resolve({
+							status: "frozen",
+							iceberg: progressionData.current.iceberg,
+							progress: {
+								beginner: {
+									completed: beginnerCompleted ? 1 : 0,
+									required: assignBeginnerGroup ? 1 : 0
+								},
+								regular: {
+									completed: numNormalCompleted,
+									required: numNormalRequired
+								},
+								challenge: {
+									completed: numChallengeCompleted,
+									required: numChallengeRequired
+								}
 							}
-						}
-					});
+						});
+						return;
+					} else {
+						resolve({
+							status: "active",
+							prefix: progressionData.current.prefix,
+							reagents: progressionData.current.reagents,
+							difficulty: progressionData.current.difficulty,
+							attempts: progressionData.current.attempts,
+							progress: {
+								beginner: {
+									completed: beginnerCompleted ? 1 : 0,
+									required: assignBeginnerGroup ? 1 : 0
+								},
+								regular: {
+									completed: numNormalCompleted,
+									required: numNormalRequired
+								},
+								challenge: {
+									completed: numChallengeCompleted,
+									required: numChallengeRequired
+								}
+							}
+						});
+					}
 					return;
 				}
 
@@ -248,7 +319,7 @@ module.exports = function(e) {
 					// Pick a reagent group number and a variation number. Repeat if it's in use
 					do {
 						// Grab a group number, excluding already used groups
-						const reagentGroupKey = findValidGroupForUser(reagentGroupsPool, completedReagentGroupsPool);
+						const reagentGroupKey = findValidReagentGroupForUser(reagentGroupsPool, completedReagentGroupsPool);
 
 						// Find a random variation number from 1-N, where N is the number of items in the group
 						const variationNumber = Math.floor(Math.random() * reagentGroupsPool[reagentGroupKey].length);
@@ -267,7 +338,7 @@ module.exports = function(e) {
 					} while (!selectedGroup);
 				}
 
-				// TODO: Fix assigning beginner group
+				// TODO: Fix assigning beginner group   ?????
 
 				let correctAnswerList = selectedGroup;
 
@@ -286,11 +357,12 @@ module.exports = function(e) {
 						reagents: shuffledReagents,
 						answers: correctAnswerList,
 						prefix: selectedPrefix,
-						attempts: 0,
+						attempts: courseData.settings.attempts,
+						groupAttempts: 0,
 						group: `${ selectedGroupNumber }`,
-						difficulty: selectedDifficulty
-					},
-					frozen: false
+						difficulty: selectedDifficulty,
+						frozen: false
+					}
 				};
 
 				// Update progression
@@ -306,14 +378,13 @@ module.exports = function(e) {
 					await courseRef.update({ assignedReagentGroups: assignedReagentGroups });
 				}
 
-				// TODO: Add configurable # of attempts
-
 				// Return content to the user
 				resolve({
 					status: "active",
 					prefix: selectedPrefix,
 					reagents: shuffledReagents,
 					difficulty: selectedDifficulty,
+					attempts: numAttempts,
 					progress: {
 						beginner: {
 							completed: beginnerCompleted ? 1 : 0,
@@ -338,11 +409,25 @@ module.exports = function(e) {
 };
 
 // Find a group for the user based on available groups, excluding groups the user has already visited
-function findValidGroupForUser(reagentGroups, completedGroups) {
+function findValidReagentGroupForUser(reagentGroups, completedGroups) {
 	// Grab group numbers and remove all that the user has already visited.
 	let keys = Object.keys(reagentGroups);
 	completedGroups.forEach(invalidKey => { keys.splice(keys.indexOf(invalidKey), 1); });
 
 	// Return a random valid key
 	return keys[Math.floor(Math.random() * keys.length)];
+}
+
+async function generateIceberg(groupId, progressionId, courseId, reagentGroup) {
+	let data = {
+		group: groupId,
+		progression: progressionId,
+		course: courseId,
+		timestamp: Date.now(),
+		reagentGroup: reagentGroup,
+		resolved: false
+	};
+
+	let collection = firestore.collection('icebergs');
+	return await (await collection.add(data)).get();
 }

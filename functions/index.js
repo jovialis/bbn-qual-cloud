@@ -7,6 +7,9 @@ admin.initializeApp();
 const gameplay = require('./functions/gameplay');
 gameplay(exports);
 
+const gameplayTriggers = require('./functions/gameplayTriggers');
+gameplayTriggers(exports);
+
 // Create a document whenever a user authenticates
 exports.createUserDocumentUponAuthentication = functions.auth.user().onCreate(user => {
     // Profile
@@ -179,8 +182,8 @@ exports.createProgressionDocumentUponGroupCreation = functions.firestore.documen
         },
         current: null,
         finished: false,
-        frozen: false,
-        group: groupId
+        group: groupId,
+        totalAttempts: 0
     };
 
     // Set defaults
