@@ -31,7 +31,7 @@ module.exports = function(e) {
 		res.json({ ref: ref.path });
 	});
 
-	e.startSession = functions.https.onRequest(async (req, res) => {
+	e.testingStartSession = functions.https.onRequest(async (req, res) => {
 		const course = req.body.coursePath;
 		const courseRef = firestore.doc(course);
 

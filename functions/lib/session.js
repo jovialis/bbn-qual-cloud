@@ -51,26 +51,22 @@ async function getCourseActiveSession(courseRef) {
 
 	// Store the latest expiration date. We only want to keep the session with the latest date and expire all the others.
 	// This is a little redundancy to prevent duplicate sessions
-	let latestExpirationDate = Date.now();
+	const now = new Date();
+	let latestExpirationDate = new Date();
 
 	// Search for a session that hasn't timed out. Firebase doesn't let us search in that way so we have to do it manually.
 	// Firebase also doesn't let us set a timer to expire this, so we have to compare timestamps manually.
 	const validDocs = query.docs.filter(async function(doc) {
 		// Data
 		const data = doc.data();
-
-		const timestamp = data.timestamp;
-		const duration = data.duration;
-
-		// Find out the date of expiration given the timestamp
-		const expirationDate = new Date(timestamp.toMillis() + duration * 60000);
+		const expiration = new Date(data.expiration.toMillis());
 
 		// Doc has expired or will expire before others. We update it then return false to exclude it.
-		if (expirationDate < Date.now() || expirationDate < latestExpirationDate) {
+		if (expiration < now || expiration < latestExpirationDate) {
 			await doc.ref.update({ expired: true });
 			return false;
 		} else {
-			latestExpirationDate = expirationDate;
+			latestExpirationDate = expiration;
 			return true;
 		}
 	});
@@ -91,11 +87,16 @@ async function startSession(userRef, courseRef, duration) {
 		errors.courseAlreadyInSession();
 	}
 
+	// Expire at Now + Duration time
+	let now = new Date();
+	let expiration = new Date(now.getTime() + duration * 60000);
+	let expirationTimestamp = admin.firestore.Timestamp.fromDate(expiration);
+
 	// Data
 	const data = {
 		expired: false,
 		timestamp: admin.firestore.Timestamp.now(),
-		duration: duration,
+		expiration: expirationTimestamp,
 		teacherRef: userRef,
 		courseRef: courseRef
 	};

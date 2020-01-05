@@ -23,13 +23,24 @@ async function getCourseSettings(courseRef) {
 
 module.exports.createCourse = createCourse;
 async function createCourse(courseName, teacherRef) {
+	// Grab teacher info
+	const teacher = (await teacherRef.get());
+	const teacherData = teacher.data();
+
 	// Data for the course
 	const courseData = {
 		archived: false,
 		assignedReagentGroups: [],
 		live: false,
 		name: courseName,
-		teacherRefs: [ teacherRef ],
+		teacherRefs: [ {
+			ref: teacherRef,
+			name: teacherData.name,
+			email: teacherData.email
+		} ],
+		teacherIds: [
+			teacher.id
+		],
 		settings: DEFAULT_SETTINGS
 	};
 

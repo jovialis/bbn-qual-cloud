@@ -10,6 +10,33 @@ const firestore = admin.firestore();
 
 module.exports = function(e) {
 
+	// Returns a session for a course
+	e.getClassSession = functions.https.onCall(async (data, context) => {
+		// Ensure there's a user
+		if (!context.auth.uid) {
+			errors.userNotAuthenticated();
+		}
+
+		const teacherRef = user.getUserRef(context.auth.uid);
+		if (!await user.isTeacher(teacherRef)) {
+			errors.userNotTeacher();
+		}
+
+		const coursePath = data.coursePath;
+		if (!coursePath) {
+			errors.invalidCourse();
+		}
+
+		let courseRef = firestore.doc(coursePath);
+
+		// TODO: Ensure teacher has access to this course
+
+		const sessionRef = await session.getCourseActiveSession(courseRef);
+		return {
+			sessionPath: sessionRef ? sessionRef.path : null
+		};
+	});
+
 	// Returns a student session
 	e.getSession = functions.https.onCall(async (data, context) => {
 		// Ensure there's a user
@@ -76,7 +103,8 @@ module.exports = function(e) {
 		// Create session
 		const sessionRef = await session.startSession(userRef, courseRef, duration);
 		return {
-			sessionRef: sessionRef
+			sessionPath: sessionRef.path,
+			session: (await sessionRef.get()).data()
 		};
 	});
 

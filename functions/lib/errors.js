@@ -12,7 +12,7 @@ module.exports.userNotTeacher = () => {
 
 // Not student
 module.exports.userNotStudent = () => {
-	throw functions.https.HttpsError("invalid-argument", "User is not a student or is not in a class.");
+	throw new functions.https.HttpsError("invalid-argument", "User is not a student or is not in a class.");
 };
 
 // Throw a HTTPS error for no valid session
