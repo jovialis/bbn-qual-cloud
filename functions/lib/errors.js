@@ -34,3 +34,8 @@ module.exports.invalidCourse = () => {
 module.exports.courseAlreadyInSession = () => {
 	throw new functions.https.HttpsError("failed-precondition", "That course already has an active session.");
 };
+
+// Invalid course name
+module.exports.invalidCourseName = () => {
+	throw new functions.https.HttpsError("failed-precondition", "That is an invalid course name.");
+};

@@ -41,7 +41,8 @@ async function createCourse(courseName, teacherRef) {
 		teacherIds: [
 			teacher.id
 		],
-		settings: DEFAULT_SETTINGS
+		settings: DEFAULT_SETTINGS,
+		timestamp: admin.firestore.Timestamp.now()
 	};
 
 	// Set course data

@@ -26,6 +26,7 @@ module.exports = function(e) {
 			teamRef: teamRef,
 			totalAttempts: 0,
 			finished: false,
+			memberRefs: (await teamRef.get()).data().memberRefs, // Include member refs in progression
 			completed: {
 				beginner: false,
 				regular: [],
@@ -43,5 +44,22 @@ module.exports = function(e) {
 			progressionRef: progressionRef
 		});
 	});
+
+	// Updates team members in a progression whenever a team is updated
+	e.updateProgressionTeamMembersUponTeamUpdate = functions.firestore.document('courses/{courseId}/teams/{teamId}')
+		.onUpdate(async (change, context) => {
+			const newMemberRefs = change.after.data().memberRefs;
+
+			// Check if the change is with the team
+			if (change.before.data().memberRefs !== newMemberRefs) {
+				// Fetch team progression
+				const progressionRef = change.after.data().progressionRef;
+
+				// Update progression with new member refs
+				progressionRef.update({
+					memberRefs: newMemberRefs
+				});
+			}
+		});
 
 };

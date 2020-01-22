@@ -124,7 +124,7 @@ module.exports = function(e) {
 			// If no more attempts remaining, freeze group
 			if (attemptsRemaining <= 0) {
 				// Create iceberg
-				const icebergRef = await generateIceberg(teamRef, progressionRef, courseRef, current.group);
+				const icebergRef = await generateIceberg(teamRef, progressionRef, courseRef, current.group, teamData.memberRefs);
 
 				await progressionRef.update({
 					current: {
@@ -386,12 +386,15 @@ function findValidReagentGroupForUser(reagentGroups, completedGroups) {
 	return keys[Math.floor(Math.random() * keys.length)];
 }
 
-async function generateIceberg(groupId, progressionId, courseId, reagentGroup) {
+async function generateIceberg(groupId, progressionId, courseId, reagentGroup, teamMembers) {
 	let data = {
-		groupRef: groupId,
+		team: {
+			ref: groupId,
+			members: teamMembers
+		},
 		progressionRef: progressionId,
 		courseRef: courseId,
-		timestamp: Date.now(),
+		timestamp: admin.firestore.Timestamp.now(),
 		reagentGroup: reagentGroup,
 		resolved: false
 	};
