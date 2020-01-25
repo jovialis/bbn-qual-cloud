@@ -351,7 +351,6 @@ module.exports = function(e) {
 
 		// If resolved has been flagged true
 		if (data.resolved) {
-
 			// We go into the progression doc and update available # attempts and the frozen flag
 			let progressionRef = data.progressionRef;
 			let courseRef = data.courseRef;

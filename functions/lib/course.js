@@ -12,6 +12,35 @@ const DEFAULT_SETTINGS = {
 	numChallengeGroups: 3
 };
 
+const DEFAULT_STATUS = 0;
+
+module.exports.courseIsLive = courseIsLive;
+async function courseIsLive(courseRef) {
+	// Grab data
+	const courseData = (await courseRef.get()).data();
+
+	// cehck whether status === live
+	return courseData.status === 1;
+}
+
+module.exports.courseIsSetup = courseIsSetup;
+async function courseIsSetup(courseRef) {
+	// Grab data
+	const courseData = (await courseRef.get()).data();
+
+	// cehck whether status === setup
+	return courseData.status === 0;
+}
+
+module.exports.courseIsArchived = courseIsArchived;
+async function courseIsArchived(courseRef) {
+	// Grab data
+	const courseData = (await courseRef.get()).data();
+
+	// cehck whether status === archived
+	return courseData.status === 2;
+}
+
 module.exports.getCourseSettings = getCourseSettings;
 async function getCourseSettings(courseRef) {
 	// Grab data
@@ -29,9 +58,8 @@ async function createCourse(courseName, teacherRef) {
 
 	// Data for the course
 	const courseData = {
-		archived: false,
+		status: DEFAULT_STATUS,
 		assignedReagentGroups: [],
-		live: false,
 		name: courseName,
 		teacherRefs: [ {
 			ref: teacherRef,

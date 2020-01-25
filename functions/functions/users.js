@@ -28,6 +28,7 @@ module.exports = function(e) {
 		const data = {
 			email: email,
 			name: name,
+			nameLower: name.toLowerCase(),
 			access: DEFAULT_USER_ACCESS,
 			courseRef: courseRef,
 			teamRef: teamRef

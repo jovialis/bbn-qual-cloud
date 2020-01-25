@@ -57,7 +57,22 @@ module.exports = function(e) {
 		};
 	});
 
+	// Update the list of teacher IDs whenever the docoument is updated, presumably with new teachers
+	e.updateTeacherUIDSOnCourseUpdate = functions.firestore.document('/courses/{courseId}').onUpdate(async (snapshot, context) => {
+		// Update the document with teacher uids if the teacherRefs has been changed
+		const newTeachers = snapshot.after.data().teacherRefs;
 
+		// Only update teacher ids if something is changed
+		if (newTeachers !== snapshot.before.data().teacherRefs) {
+			// Map to teacher ids
+			const teacherIds = newTeachers.map(teacher => teacher.ref.id);
+
+			// Save teacher ids
+			await snapshot.after.ref.update({
+				teacherIds: teacherIds
+			});
+		}
+	});
 
 };
 

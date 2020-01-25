@@ -4,6 +4,7 @@ const admin = require('firebase-admin');
 const errors = require('../lib/errors');
 const user = require('../lib/user');
 const session = require('../lib/session');
+const courses = require('../lib/course');
 
 // Firestore
 const firestore = admin.firestore();
@@ -92,6 +93,11 @@ module.exports = function(e) {
 
 		const courseId = data.courseId;
 		const courseRef = firestore.collection('courses').doc(courseId);
+
+		// Make sure the course is live
+		if (!(await courses.courseIsLive(courseRef))) {
+			errors.courseNotLive();
+		}
 
 		// Ensure course exists
 		if (!courseId || !(await courseRef.get()).exists) {
