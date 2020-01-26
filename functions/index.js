@@ -18,6 +18,3 @@ sessions(exports);
 
 const users = require('./functions/users');
 users(exports);
-
-const testing = require('./functions/testing');
-testing(exports);

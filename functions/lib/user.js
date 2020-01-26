@@ -17,4 +17,12 @@ async function isTeacher(userRef) {
 	return userData.access > 0;
 }
 
+// Util method to return true if it's an admin
+module.exports.isAdmin = isAdmin;
+async function isAdmin(userRef) {
+	// Teacher data
+	const userData = (await userRef.get()).data();
+	return userData.access >= 2;
+}
+
 // Search for courses where the user is a teacher

@@ -1,6 +1,8 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 
+const teams = require('./team');
+
 // Firestore
 const firestore = admin.firestore();
 
@@ -96,4 +98,26 @@ async function userIsTeacherInCourse(teacherRef, courseRef) {
 		const courseData = (await courseRef.get()).data();
 		return courseData.teacherRefs.includes(teacherRef);
 	}
+}
+
+module.exports.goLive = goLive;
+async function goLive(courseRef) {
+	// Convert teams to real teams
+	const setupTeams = courseRef.collection('setupTeams');
+	const allDocs = await setupTeams.get();
+
+	// For each team setup doc
+	for (const setupTeam of allDocs.docs) {
+		const data = setupTeam.data();
+		const name = data.name;
+		const members = data.members;
+
+		// Create the team
+		await teams.createGroup(courseRef, members, name);
+	}
+
+	// Update status
+	await courseRef.update({
+		status: 1
+	});
 }

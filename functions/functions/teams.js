@@ -4,6 +4,7 @@ const admin = require('firebase-admin');
 const errors = require('../lib/errors');
 const user = require('../lib/user');
 const session = require('../lib/session');
+const teams = require('../lib/team');
 
 // Firestore
 const firestore = admin.firestore();
@@ -57,9 +58,23 @@ module.exports = function(e) {
 
 				// Update progression with new member refs
 				progressionRef.update({
+					name: change.after.data().name,
 					memberRefs: newMemberRefs
 				});
 			}
+		});
+
+	// Replace all emails in the team with user data
+	e.assignUsersOnTeamCreate = functions.firestore.document('courses/{courseId}/teams/{teamId}')
+		.onCreate(async (change, context) => {
+			const courseRef = firestore.collection('courses').doc(context.params.courseId);
+			const teamRef = change.ref;
+
+			// Grab the emails
+			const emails = change.data().emails;
+
+			// Assign the users
+			await teams.searchForUsersToAddByEmail(courseRef, teamRef, emails);
 		});
 
 };

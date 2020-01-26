@@ -29,7 +29,7 @@ async function getUserSession(userRef) {
 	const data = user.data();
 
 	// Ensure that the user is a student
-	if (data.access !== 0 || !data.courseRef || !data.teamRef) {
+	if (!data.access || data.access !== 0 || !data.courseRef || !data.teamRef) {
 		errors.userNotStudent();
 	}
 

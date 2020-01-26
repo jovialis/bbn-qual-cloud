@@ -74,5 +74,36 @@ module.exports = function(e) {
 		}
 	});
 
+	e.courseGoLive = functions.https.onCall(async (data, context) => {
+		// Only let teachers make a course go live
+		const teacherRef = user.getUserRef(context.auth.uid);
+		if (!(await user.isTeacher(teacherRef))) {
+			errors.userNotTeacher();
+		}
+
+		// Grab course id
+		const id = data.courseId;
+		const courseRef = firestore.collection('courses').doc(id);
+
+		// Ensure the teacher's UID is allowed. If they're not an admin, check to make sure the UID is in the course teachers
+		if (!(await user.isAdmin(teacherRef))) {
+			// Grab course data
+			const courseData = (await courseRef.get());
+
+			// Teacher ids
+			let teacherIds = courseData.teacherIds;
+			if (!teacherIds.includes(context.auth.uid)) {
+				errors.userNotTeacher()
+			}
+		}
+
+		// GO LIVE!!!!
+		await courses.goLive(courseRef);
+
+		return {
+			success: true
+		};
+	});
+
 };
 
